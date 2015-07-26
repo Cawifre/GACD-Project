@@ -1,10 +1,12 @@
+library(plyr)
 library(dplyr)
+library(reshape2)
 
 run.analysis <- function() {
     initializeDataFiles()
     data <- readDataFiles()
     data <- transformData(data)
-    outputPath <- "./dataset.txt"
+    data <- analyzeData(data)
     data
 }
 
@@ -31,9 +33,11 @@ unpackDataFiles <- function() {
 
 readDataFiles <- function() {
     meta <- readMetaDataFiles()
-    test <- readDataFiles2("test", meta$features)
-    train <- readDataFiles2("train", meta$features)
-    list(meta=meta, test=test, train=train)
+    measures <- list()
+    measures$x <- ldply(c("test", "train"), function(setName) readDataFilesX(setName, meta$features))
+    measures$y <- ldply(c("test", "train"), function(setName) readDataFilesY(setName))
+    measures$subject <- ldply(c("test", "train"), function(setName) readDataFilesSubject(setName))
+    list(meta=meta, measures=measures)
 }
 
 readMetaDataFiles <- function() {
@@ -52,25 +56,32 @@ readMetaDataFiles <- function() {
     list(features=features, activities=activities)
 }
 
-readDataFiles2 <- function(setName, features) {
+readDataFilesSubject <- function(setName) {
     path <- sprintf("./UCI HAR Dataset/%s/subject_%s.txt", setName, setName)
     colNames <- "subject"
     subject <- read.table(path, col.names=colNames)
     
+    subject
+}
+
+readDataFilesX <- function(setName, features) {
     path <- sprintf("./UCI HAR Dataset/%s/X_%s.txt", setName, setName)
     colNames <- features$name ##sapply(features$name, function(name) {gsub("[(),-]", "", name)})
     x <- read.table(path, col.names=colNames)
     
+    x
+}
+
+readDataFilesY <- function(setName) {
     path <- sprintf("./UCI HAR Dataset/%s/Y_%s.txt", setName, setName)
     colNames <- "activity"
     y <- read.table(path, col.names=colNames)
     
-    list(subject=subject, x=x, y=y)
+    y
 }
 
 transformData <- function(data) {
-    set <- factor(c("test", "train"))
-    transformX <- function(x, set) {
+    transformX <- function(x) {
         x <- select(x, matches(".*(mean|std)\\.\\..*"), -angle.tBodyAccJerkMean..gravityMean.)
         x <- rename(
                 x,
@@ -140,7 +151,6 @@ transformData <- function(data) {
                 fBodyBodyGyroMag.Std = fBodyBodyGyroMag.std..,
                 fBodyBodyGyroJerkMag.Mean = fBodyBodyGyroJerkMag.mean..,
                 fBodyBodyGyroJerkMag.Std = fBodyBodyGyroJerkMag.std..)
-        x$set <- rep(set, nrow(x))
         x
     }
     
@@ -157,13 +167,20 @@ transformData <- function(data) {
         dataset$x
     }
     
-    data$test$x <- transformX(data$test$x, set[1])
-    data$test$y <- transformY(data$test$y)
-    data$test <- mergeData(data$test)
+    data$measures$x <- transformX(data$measures$x)
+    data$measures$y <- transformY(data$measures$y)
+    data <- mergeData(data$measures)
+}
+
+analyzeData <- function(data) {
+    analyzeByActivity <- function(subset) {
+        data <- melt(subset, id.vars=c("activity"))
+        data <- dcast(data, activity ~ variable, mean)
+        data
+    }
     
-    data$train$x <- transformX(data$train$x, set[2])
-    data$train$y <- transformY(data$train$y)
-    data$train <- mergeData(data$train)
+    data <- ddply(data, .(subject, activity), analyzeByActivity)
+    data <- data[,c(68,1:67)]
     
     data
 }
