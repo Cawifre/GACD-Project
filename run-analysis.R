@@ -7,6 +7,7 @@ run.analysis <- function() {
     data <- readDataFiles()
     data <- transformData(data)
     data <- analyzeData(data)
+    write.table(data, "./output.txt", row.names=FALSE)
     data
 }
 
